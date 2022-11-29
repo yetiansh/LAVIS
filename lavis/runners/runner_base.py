@@ -345,12 +345,12 @@ class RunnerBase:
         if not self.evaluate_only and self.resume_ckpt_path is not None:
             self._load_checkpoint(self.resume_ckpt_path)
 
-        for cur_epoch in range(self.start_epoch, self.max_epoch):
+        # for cur_epoch in range(self.start_epoch, self.max_epoch):
             # training phase
-            if not self.evaluate_only:
-                logging.info("Start training")
-                train_stats = self.train_epoch(cur_epoch)
-                self.log_stats(split_name="train", stats=train_stats)
+        if not self.evaluate_only:
+            logging.info("Start training")
+            train_stats = self.train_epoch(cur_epoch)
+            self.log_stats(split_name="train", stats=train_stats)
 
             # evaluation phase
             # if len(self.valid_splits) > 0:
@@ -380,10 +380,10 @@ class RunnerBase:
             #     if not self.evaluate_only:
             #         self._save_checkpoint(cur_epoch, is_best=False)
 
-            if self.evaluate_only:
-                break
+            # if self.evaluate_only:
+            #     break
 
-            dist.barrier()
+        dist.barrier()
 
         # testing phase
         # test_epoch = "best" if len(self.valid_splits) > 0 else cur_epoch

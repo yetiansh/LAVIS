@@ -193,10 +193,11 @@ class BaseTask:
             header = header + "; inner epoch [{}]".format(inner_epoch)
 
         num_iters = int(os.getenv("NUM_ITERS"))
-        for i in metric_logger.log_every(range(iters_per_epoch), log_freq, header):
+        # for i in metric_logger.log_every(range(iters_per_epoch), log_freq, header):
+        for i in range(num_iters):
             # if using iter-based runner, we stop after iters_per_epoch iterations.
-            if i >= iters_per_epoch:
-                break
+            # if i >= iters_per_epoch:
+            #     break
             
             if i >= num_iters:
                 break
