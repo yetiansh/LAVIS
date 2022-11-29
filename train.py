@@ -47,10 +47,15 @@ def parse_args():
         "in xxx=yyy format will be merged into config file (deprecate), "
         "change to --cfg-options instead.",
     )
+    parser.add_argument("--num_iters", required=True, type=int)
+    parser.add_argument("--trace_file", required=True, type=str)
 
     args = parser.parse_args()
     # if 'LOCAL_RANK' not in os.environ:
     #     os.environ['LOCAL_RANK'] = str(args.local_rank)
+
+    os.environ["NUM_ITERS"] = str(args.num_iters)
+    os.environ["TRACE_FILE"] = str(args.trace_file)
 
     return args
 

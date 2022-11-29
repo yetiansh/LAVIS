@@ -192,9 +192,13 @@ class BaseTask:
             inner_epoch = start_iters // iters_per_epoch
             header = header + "; inner epoch [{}]".format(inner_epoch)
 
+        num_iters = int(os.getenv("NUM_ITERS"))
         for i in metric_logger.log_every(range(iters_per_epoch), log_freq, header):
             # if using iter-based runner, we stop after iters_per_epoch iterations.
             if i >= iters_per_epoch:
+                break
+            
+            if i >= num_iters:
                 break
 
             samples = next(data_loader)

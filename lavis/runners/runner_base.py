@@ -353,32 +353,32 @@ class RunnerBase:
                 self.log_stats(split_name="train", stats=train_stats)
 
             # evaluation phase
-            if len(self.valid_splits) > 0:
-                for split_name in self.valid_splits:
-                    logging.info("Evaluating on {}.".format(split_name))
+            # if len(self.valid_splits) > 0:
+            #     for split_name in self.valid_splits:
+            #         logging.info("Evaluating on {}.".format(split_name))
 
-                    val_log = self.eval_epoch(
-                        split_name=split_name, cur_epoch=cur_epoch
-                    )
-                    if val_log is not None:
-                        if is_main_process():
-                            assert (
-                                "agg_metrics" in val_log
-                            ), "No agg_metrics found in validation log."
+            #         val_log = self.eval_epoch(
+            #             split_name=split_name, cur_epoch=cur_epoch
+            #         )
+            #         if val_log is not None:
+            #             if is_main_process():
+            #                 assert (
+            #                     "agg_metrics" in val_log
+            #                 ), "No agg_metrics found in validation log."
 
-                            agg_metrics = val_log["agg_metrics"]
-                            if agg_metrics > best_agg_metric and split_name == "val":
-                                best_epoch, best_agg_metric = cur_epoch, agg_metrics
+            #                 agg_metrics = val_log["agg_metrics"]
+            #                 if agg_metrics > best_agg_metric and split_name == "val":
+            #                     best_epoch, best_agg_metric = cur_epoch, agg_metrics
 
-                                self._save_checkpoint(cur_epoch, is_best=True)
+            #                     self._save_checkpoint(cur_epoch, is_best=True)
 
-                            val_log.update({"best_epoch": best_epoch})
-                            self.log_stats(val_log, split_name)
+            #                 val_log.update({"best_epoch": best_epoch})
+            #                 self.log_stats(val_log, split_name)
 
-            else:
-                # if no validation split is provided, we just save the checkpoint at the end of each epoch.
-                if not self.evaluate_only:
-                    self._save_checkpoint(cur_epoch, is_best=False)
+            # else:
+            #     # if no validation split is provided, we just save the checkpoint at the end of each epoch.
+            #     if not self.evaluate_only:
+            #         self._save_checkpoint(cur_epoch, is_best=False)
 
             if self.evaluate_only:
                 break
@@ -386,12 +386,12 @@ class RunnerBase:
             dist.barrier()
 
         # testing phase
-        test_epoch = "best" if len(self.valid_splits) > 0 else cur_epoch
-        self.evaluate(cur_epoch=test_epoch, skip_reload=self.evaluate_only)
+        # test_epoch = "best" if len(self.valid_splits) > 0 else cur_epoch
+        # self.evaluate(cur_epoch=test_epoch, skip_reload=self.evaluate_only)
 
-        total_time = time.time() - start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        logging.info("Training time {}".format(total_time_str))
+        # total_time = time.time() - start_time
+        # total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        # logging.info("Training time {}".format(total_time_str))
 
     def evaluate(self, cur_epoch="best", skip_reload=False):
         test_logs = dict()
