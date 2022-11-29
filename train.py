@@ -12,6 +12,7 @@ import random
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+from torch.profiler import profile, ProfilerActivity
 
 import lavis.tasks as tasks
 from lavis.common.config import Config
@@ -30,6 +31,9 @@ from lavis.models import *
 from lavis.processors import *
 from lavis.runners import *
 from lavis.tasks import *
+
+
+OUTPUT_DIR = "./results"
 
 
 def parse_args():
@@ -80,8 +84,6 @@ def main():
 
     cfg = Config(parse_args())
 
-    init_distributed_mode(cfg.run_cfg)
-
     setup_seeds(cfg)
 
     # set after init_distributed_mode() to only log on master.
@@ -96,7 +98,12 @@ def main():
     runner = get_runner_class(cfg)(
         cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
     )
-    runner.train()
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_flops=True, profile_memory=True) as prof:
+        runner.train()
+
+    rank = torch.distributed.get_rank()
+    if rank == 0:
+        prof.export_chrome_trace(os.path.join(OUTPUT_DIR, os.getenv("TRACE_FILE")))
 
 
 if __name__ == "__main__":
