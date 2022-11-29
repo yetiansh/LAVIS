@@ -82,6 +82,7 @@ class RunnerBase:
         A property to get the DDP-wrapped model on the device.
         """
         # move model to device
+        print(f"self.device: {self.device}")
         if self._model.device != self.device:
             self._model = self._model.to(self.device)
 
@@ -89,7 +90,7 @@ class RunnerBase:
             if self.use_distributed:
                 if self._wrapped_model is None:
                     self._wrapped_model = DDP(
-                        self._model, device_ids=[self.config.run_cfg.gpu]
+                        self._model, device_ids=[get_rank()]
                     )
             else:
                 self._wrapped_model = self._model
@@ -347,6 +348,7 @@ class RunnerBase:
 
         # for cur_epoch in range(self.start_epoch, self.max_epoch):
             # training phase
+        cur_epoch = 0
         if not self.evaluate_only:
             logging.info("Start training")
             train_stats = self.train_epoch(cur_epoch)
