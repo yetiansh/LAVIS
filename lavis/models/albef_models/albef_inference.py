@@ -103,6 +103,7 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
     def _rampup_factor(self, epoch, iters, num_iters_per_epoch):
         return min(1, (epoch * num_iters_per_epoch + iters) / (2 * num_iters_per_epoch))
 
+    @torch.no_grad()
     def forward(self, samples):
         """
         Args:
@@ -215,10 +216,7 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
 
             loss_itc = (loss_i2t + loss_t2i) / 2
 
-        # self._dequeue_and_enqueue(image_feat_m, text_feat_m)
-
-        del image_feat_m, text_feat_m, text_feat_all, image_feat_all
-        torch.cuda.empty_cache()
+        self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
         # forward the positve image-text pair
         with record_function("albef.positive_image_text_pair"):
@@ -244,9 +242,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 weights_i2t = F.softmax(weights_i2t, dim=1)
                 weights_t2i = F.softmax(weights_t2i, dim=1)
 
-        del sim_i2t, sim_t2i
-        torch.cuda.empty_cache()
-
         with record_function("select_negative_examples"):
             # select a negative image for each text
             image_embeds_neg = []
@@ -263,9 +258,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 text_embeds_neg.append(text_embeds[neg_idx])
                 text_atts_neg.append(text.attention_mask[neg_idx])
         
-        del weights_i2t, weights_t2i
-        torch.cuda.empty_cache()
-        
         with record_function("calc_embeds"):
             text_embeds_neg = torch.stack(text_embeds_neg, dim=0)
             text_atts_neg = torch.stack(text_atts_neg, dim=0)
@@ -275,9 +267,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
 
             image_embeds_all = torch.cat([image_embeds_neg, image_embeds], dim=0)
             image_atts_all = torch.cat([image_atts, image_atts], dim=0)
-        
-        del image_embeds_neg, text_embeds_neg
-        torch.cuda.empty_cache()
 
         with record_function("albef.text_encoder.multimodal_bert"):
             encoder_output_neg = self.text_encoder.bert(
@@ -288,9 +277,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 return_dict=True,
                 mode="fusion",
             )
-        
-        del text_embeds_all, text_atts_all, image_embeds_all, image_atts_all
-        torch.cuda.empty_cache()
 
         vl_embeddings = torch.cat(
             [
@@ -301,18 +287,11 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
         )
         itm_logits = self.itm_head(vl_embeddings)
 
-        del vl_embeddings, encoder_output_pos, encoder_output_neg
-        torch.cuda.empty_cache()
-
         itm_labels = torch.cat(
             [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
             dim=0,
         ).to(self.device)
         loss_itm = F.cross_entropy(itm_logits, itm_labels)
-        
-        del itm_logits
-        del itm_labels
-        torch.cuda.empty_cache()
 
         # MLM
         with record_function("calc_mlm_input"):
@@ -327,9 +306,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 targets=labels,
                 probability_matrix=probability_matrix,
             )
-        
-        del probability_matrix
-        torch.cuda.empty_cache()
 
         with record_function("calc_mlm_logit"):
             with torch.no_grad():
@@ -341,10 +317,6 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                     return_dict=True,
                     return_logits=True,
                 )
-        
-        del image_embeds_m
-        torch.cuda.empty_cache()
-
         with record_function("calc_mlm_output"):
             mlm_output = self.text_encoder(
                 input_ids,
@@ -358,14 +330,29 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
             )
             loss_mlm = mlm_output.loss
 
-        del input_ids
-        torch.cuda.empty_cache()
-
         return AlbefOutput(
             loss=loss_itc + loss_itm + loss_mlm,
             loss_itc=loss_itc,
             loss_itm=loss_itm,
             loss_mlm=loss_mlm,
+            sims=AlbefSimilarity(
+                sim_i2t=sim_i2t,
+                sim_t2i=sim_t2i,
+                sim_i2t_m=sim_i2t_m,
+                sim_t2i_m=sim_t2i_m,
+                sim_i2t_targets=sim_i2t_targets,
+                sim_t2i_targets=sim_t2i_targets,
+            ),
+            intermediate_output=AlbefIntermediateOutput(
+                image_embeds=image_embeds,
+                image_embeds_m=image_embeds_m,
+                text_embeds=text_embeds,
+                text_embeds_m=text_embeds_m,
+                encoder_output=encoder_output_pos,
+                encoder_output_neg=encoder_output_neg,
+                itm_logits=itm_logits,
+                itm_labels=itm_labels,
+            ),
         )
 
     def mask(
