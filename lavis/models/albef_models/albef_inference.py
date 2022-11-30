@@ -217,7 +217,7 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
 
         # self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
-        del image_feat_m, text_feat_m
+        del image_feat_m, text_feat_m, text_feat_all, image_feat_all
         torch.cuda.empty_cache()
 
         # forward the positve image-text pair
@@ -289,10 +289,7 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 mode="fusion",
             )
         
-        del text_embeds_all
-        del text_atts_all
-        del image_embeds_all
-        del image_atts_all
+        del text_embeds_all, text_atts_all, image_embeds_all, image_atts_all
         torch.cuda.empty_cache()
 
         vl_embeddings = torch.cat(
@@ -304,7 +301,7 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
         )
         itm_logits = self.itm_head(vl_embeddings)
 
-        del vl_embeddings
+        del vl_embeddings, encoder_output_pos, encoder_output_neg
         torch.cuda.empty_cache()
 
         itm_labels = torch.cat(
@@ -330,6 +327,9 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 targets=labels,
                 probability_matrix=probability_matrix,
             )
+        
+        del probability_matrix
+        torch.cuda.empty_cache()
 
         with record_function("calc_mlm_logit"):
             with torch.no_grad():
@@ -341,6 +341,10 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                     return_dict=True,
                     return_logits=True,
                 )
+        
+        del image_embeds_m
+        torch.cuda.empty_cache()
+
         with record_function("calc_mlm_output"):
             mlm_output = self.text_encoder(
                 input_ids,
@@ -353,6 +357,9 @@ class AlbefInference(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 alpha=alpha,
             )
             loss_mlm = mlm_output.loss
+
+        del input_ids
+        torch.cuda.empty_cache()
 
         return AlbefOutput(
             loss=loss_itc + loss_itm + loss_mlm,
