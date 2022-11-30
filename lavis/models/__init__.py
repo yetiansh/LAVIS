@@ -15,6 +15,7 @@ from lavis.models.albef_models.albef_classification import AlbefClassification
 from lavis.models.albef_models.albef_feature_extractor import AlbefFeatureExtractor
 from lavis.models.albef_models.albef_nlvr import AlbefNLVR
 from lavis.models.albef_models.albef_pretrain import AlbefPretrain
+from lavis.models.albef_models.albef_inference import AlbefInference
 from lavis.models.albef_models.albef_retrieval import AlbefRetrieval
 from lavis.models.albef_models.albef_vqa import AlbefVQA
 from lavis.models.alpro_models.alpro_qa import AlproQA
@@ -47,7 +48,7 @@ __all__ = [
     "AlbefNLVR",
     "AlbefVQA",
     "AlbefPretrain",
-    "AlberInference",
+    "AlbefInference",
     "AlbefRetrieval",
     "AlproQA",
     "AlproRetrieval",
