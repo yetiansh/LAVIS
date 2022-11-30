@@ -127,8 +127,11 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
             >>> output.keys()
             odict_keys(['sims', 'intermediate_output', 'loss', 'loss_itc', 'loss_itm', 'loss_mlm'])
         """
-        image = samples["image"]
-        caption = samples["text_input"]
+        with record_function("input.image"):
+            image = samples["image"]
+        
+        with record_function("input.caption"):
+            caption = samples["text_input"]
 
         alpha = self.alpha * self._rampup_factor(
             epoch=samples["epoch"],
@@ -139,13 +142,13 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
         with torch.no_grad():
             self.temp.clamp_(0.001, 0.5)
 
-        with record_function("albef.visual_encoder.forward_features"):
+        with record_function("visual_encoder.forward_feature"):
             image_embeds = self.visual_encoder.forward_features(image)
-        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
-            self.device
-        )
+            image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
+                self.device
+            )
 
-        with record_function("albef.tokenizer"):
+        with record_function("tokenizer"):
             text = self.tokenizer(
                 caption,
                 padding="max_length",
@@ -154,9 +157,10 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 return_tensors="pt",
             ).to(self.device)
 
-        image_feat = F.normalize(self.vision_proj(image_embeds[:, 0, :]), dim=-1)
+        with record_function("image_feature"):
+            image_feat = F.normalize(self.vision_proj(image_embeds[:, 0, :]), dim=-1)
 
-        with record_function("albef.text_encoder.bert"):
+        with record_function("text_encoder.bert"):
             text_output = self.text_encoder.bert(
                 text.input_ids,
                 attention_mask=text.attention_mask,
@@ -167,7 +171,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
             text_feat = F.normalize(self.text_proj(text_embeds[:, 0, :]), dim=-1)
 
         # get momentum features
-        with record_function("get_momentum_features"):
+        with record_function("momentum_features@no_grad"):
             with torch.no_grad():
                 self._momentum_update()
                 image_embeds_m = self.visual_encoder_m(image)
@@ -202,7 +206,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                     alpha * F.softmax(sim_t2i_m, dim=1) + (1 - alpha) * sim_targets
                 )
 
-        with record_function("contrastive_loss"):
+        with record_function("loss_itc"):
             sim_i2t = image_feat @ text_feat_all / self.temp
             sim_t2i = text_feat @ image_feat_all / self.temp
 
@@ -218,7 +222,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
         self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
         # forward the positve image-text pair
-        with record_function("albef.positive_image_text_pair"):
+        with record_function("text_encoder.bert_cross_modal_pos"):
             encoder_output_pos = self.text_encoder.bert(
                 encoder_embeds=text_embeds,
                 attention_mask=text.attention_mask,
@@ -228,7 +232,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 mode="fusion",
             )
         
-        with record_function("calc_weights"):
+        with record_function("weights@no_grad"):
             with torch.no_grad():
                 bs = image.size(0)
 
@@ -241,7 +245,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 weights_i2t = F.softmax(weights_i2t, dim=1)
                 weights_t2i = F.softmax(weights_t2i, dim=1)
 
-        with record_function("select_negative_examples"):
+        with record_function("negative_examples"):
             # select a negative image for each text
             image_embeds_neg = []
             for b in range(bs):
@@ -257,7 +261,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 text_embeds_neg.append(text_embeds[neg_idx])
                 text_atts_neg.append(text.attention_mask[neg_idx])
         
-        with record_function("calc_embeds"):
+        with record_function("embeds_and_attrs"):
             text_embeds_neg = torch.stack(text_embeds_neg, dim=0)
             text_atts_neg = torch.stack(text_atts_neg, dim=0)
 
@@ -267,7 +271,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
             image_embeds_all = torch.cat([image_embeds_neg, image_embeds], dim=0)
             image_atts_all = torch.cat([image_atts, image_atts], dim=0)
 
-        with record_function("albef.text_encoder.multimodal_bert"):
+        with record_function("text_encoder.bert_cross_modal_neg"):
             encoder_output_neg = self.text_encoder.bert(
                 encoder_embeds=text_embeds_all,
                 attention_mask=text_atts_all,
@@ -277,23 +281,24 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 mode="fusion",
             )
 
-        vl_embeddings = torch.cat(
-            [
-                encoder_output_pos.last_hidden_state[:, 0, :],
-                encoder_output_neg.last_hidden_state[:, 0, :],
-            ],
-            dim=0,
-        )
-        itm_logits = self.itm_head(vl_embeddings)
+        with record_function("loss_itm"):
+            vl_embeddings = torch.cat(
+                [
+                    encoder_output_pos.last_hidden_state[:, 0, :],
+                    encoder_output_neg.last_hidden_state[:, 0, :],
+                ],
+                dim=0,
+            )
+            itm_logits = self.itm_head(vl_embeddings)
 
-        itm_labels = torch.cat(
-            [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
-            dim=0,
-        ).to(self.device)
-        loss_itm = F.cross_entropy(itm_logits, itm_labels)
+            itm_labels = torch.cat(
+                [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
+                dim=0,
+            ).to(self.device)
+            loss_itm = F.cross_entropy(itm_logits, itm_labels)
 
         # MLM
-        with record_function("calc_mlm_input"):
+        with record_function("mlm_inputs"):
             input_ids = text.input_ids.clone()
             labels = input_ids.clone()
 
@@ -306,7 +311,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                 probability_matrix=probability_matrix,
             )
 
-        with record_function("calc_mlm_logit"):
+        with record_function("mlm_logit@no_grad"):
             with torch.no_grad():
                 logits_m = self.text_encoder_m(
                     input_ids,
@@ -316,7 +321,7 @@ class AlbefPretrain(AlbefBase, MomentumDistilationMixin, SharedQueueMixin):
                     return_dict=True,
                     return_logits=True,
                 )
-        with record_function("calc_mlm_output"):
+        with record_function("loss_mlm"):
             mlm_output = self.text_encoder(
                 input_ids,
                 attention_mask=text.attention_mask,
