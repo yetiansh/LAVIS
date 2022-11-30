@@ -47,6 +47,7 @@ __all__ = [
     "AlbefNLVR",
     "AlbefVQA",
     "AlbefPretrain",
+    "AlberInference",
     "AlbefRetrieval",
     "AlproQA",
     "AlproRetrieval",
